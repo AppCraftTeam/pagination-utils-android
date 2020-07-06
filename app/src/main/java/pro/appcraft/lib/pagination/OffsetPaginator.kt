@@ -1,6 +1,6 @@
 package pro.appcraft.lib.pagination
 
-import io.reactivex.rxjava3.core.Single
+import io.reactivex.Single
 
 class OffsetPaginator<T: Any> (
     private val requestFactory : (Int, Int) -> Single<List<T>>,

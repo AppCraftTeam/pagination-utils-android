@@ -1,7 +1,7 @@
 package pro.appcraft.lib.pagination
 
-import io.reactivex.rxjava3.core.Single
-import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.Single
+import io.reactivex.disposables.Disposable
 import mu.KotlinLogging
 import java.util.*
 
