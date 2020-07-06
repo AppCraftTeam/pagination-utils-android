@@ -11,7 +11,7 @@ abstract class BasePaginator<T : Any>(
     internal val viewController: ViewController<T>,
     var limit: Int = DEFAULT_LIMIT
 ) {
-    internal val currentData: MutableList<T> = ArrayList()
+    val currentData: MutableList<T> = ArrayList()
 
     internal var currentState: State<T> = IDLE()
     private var disposable: Disposable? = null
