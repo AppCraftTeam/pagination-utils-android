@@ -11,7 +11,7 @@ abstract class BasePaginator<T : Any>(
     internal val viewController: ViewController<T>,
     var limit: Int = DEFAULT_LIMIT
 ) {
-    val currentData: MutableList<T> = ArrayList()
+    internal val currentData: MutableList<T> = ArrayList()
 
     internal var currentState: State<T> = IDLE()
     private var disposable: Disposable? = null
@@ -52,27 +52,13 @@ abstract class BasePaginator<T : Any>(
 
     }
 
-    fun get(index: Int): T {
-        return currentData[index]
-    }
-
-    fun size(): Int {
-        return currentData.size
-    }
-
     interface ViewController<T> {
         fun showEmptyProgress(show: Boolean) {}
-
         fun showEmptyError(show: Boolean, error: Throwable?) {}
-
         fun showEmptyView(show: Boolean) {}
-
         fun showData(show: Boolean, data: List<T>) {}
-
         fun showErrorMessage(error: Throwable) {}
-
         fun showRefreshProgress(show: Boolean) {}
-
         fun showPageProgress(show: Boolean) {}
     }
 
@@ -90,10 +76,9 @@ abstract class BasePaginator<T : Any>(
         }
 
         fun release() {}
-
         fun newData(data: List<T>) {}
-
         fun fail(error: Throwable) {}
+        fun updateData() {}
     }
 
     private inner class IDLE internal constructor() : State<T> {
@@ -147,11 +132,10 @@ abstract class BasePaginator<T : Any>(
             } else {
                 currentData.clear()
                 currentData.addAll(data)
-                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT) {
+                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT)
                     ALL_DATA()
-                } else {
+                else
                     DATA()
-                }
             }
         }
 
@@ -161,6 +145,12 @@ abstract class BasePaginator<T : Any>(
 
         override fun release() {
             currentState = RELEASED()
+        }
+
+        override fun updateData() {
+            if (currentData.isNotEmpty()) {
+                currentState = PAGE_PROGRESS()
+            }
         }
     }
 
@@ -190,6 +180,12 @@ abstract class BasePaginator<T : Any>(
         override fun release() {
             currentState = RELEASED()
         }
+
+        override fun updateData() {
+            if (currentData.isNotEmpty()) {
+                currentState = DATA()
+            }
+        }
     }
 
     internal inner class EMPTY_DATA : State<T> {
@@ -217,6 +213,12 @@ abstract class BasePaginator<T : Any>(
 
         override fun release() {
             currentState = RELEASED()
+        }
+
+        override fun updateData() {
+            if (currentData.isNotEmpty()) {
+                currentState = DATA()
+            }
         }
     }
 
@@ -253,18 +255,14 @@ abstract class BasePaginator<T : Any>(
         override fun release() {
             currentState = RELEASED()
         }
+
+        override fun updateData() {
+            if (currentData.isEmpty())
+                currentState = EMPTY_DATA()
+            else
+                viewController.showData(true, currentData)
+        }
     }
-
-    @Throws(Exception::class)
-    private fun load(currentData: List<T>?) {
-        disposable?.dispose()
-
-        disposable = loadRequest(currentData, limit)
-            .subscribe({ result -> currentState.newData(result) }, { error -> currentState.fail(error) })
-    }
-
-    @Throws(Exception::class)
-    protected abstract fun loadRequest(currentData: List<T>?, limit: Int): Single<List<T>>
 
     private inner class REFRESH internal constructor() : State<T> {
         init {
@@ -291,22 +289,27 @@ abstract class BasePaginator<T : Any>(
             } else {
                 currentData.clear()
                 currentData.addAll(data)
-                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT) {
+                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT)
                     ALL_DATA()
-                } else {
+                else
                     DATA()
-                }
             }
         }
 
         override fun fail(error: Throwable) {
-            currentData.clear()
-            currentState = EMPTY_ERROR(error)
-//            viewController.showErrorMessage(error)
+            currentState = DATA()
+            viewController.showErrorMessage(error)
         }
 
         override fun release() {
             currentState = RELEASED()
+        }
+
+        override fun updateData() {
+            if (currentData.isEmpty())
+                currentState = EMPTY_PROGRESS()
+            else
+                viewController.showData(true, currentData)
         }
     }
 
@@ -330,11 +333,10 @@ abstract class BasePaginator<T : Any>(
 
         override fun newData(data: List<T>) {
             currentData.addAll(data)
-            currentState = if (data.isEmpty() || data.size < limit || limit == SINGLE_PAGE_LIMIT) {
+            currentState = if (data.isEmpty() || data.size < limit || limit == SINGLE_PAGE_LIMIT)
                 ALL_DATA()
-            } else {
+            else
                 DATA()
-            }
         }
 
         @Throws(Exception::class)
@@ -344,12 +346,19 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun fail(error: Throwable) {
-            currentState = DATA()
+            currentState = if (currentData.isEmpty()) EMPTY_DATA() else DATA()
             viewController.showErrorMessage(error)
         }
 
         override fun release() {
             currentState = RELEASED()
+        }
+
+        override fun updateData() {
+            if (currentData.isEmpty())
+                currentState = EMPTY_PROGRESS()
+            else
+                viewController.showData(true, currentData)
         }
     }
 
@@ -380,40 +389,70 @@ abstract class BasePaginator<T : Any>(
         override fun release() {
             currentState = RELEASED()
         }
+
+        override fun updateData() {
+            if (currentData.isEmpty())
+                currentState = EMPTY_DATA()
+            else
+                viewController.showData(true, currentData)
+        }
     }
 
     private inner class RELEASED internal constructor() : State<T> {
         init {
-            if (disposable != null && !disposable!!.isDisposed) {
+            currentData.clear()
+            if (disposable != null && !disposable!!.isDisposed)
                 disposable!!.dispose()
-            }
         }
     }
 
-    fun update(sample: T, predicate: (T) -> Boolean) {
+    @Throws(Exception::class)
+    private fun load(currentData: List<T>?) {
+        disposable?.dispose()
+
+        disposable = loadRequest(currentData, limit)
+            .subscribe({ result -> currentState.newData(result) }, { error -> currentState.fail(error) })
+    }
+
+    @Throws(Exception::class)
+    protected abstract fun loadRequest(currentData: List<T>?, limit: Int): Single<List<T>>
+
+    fun invalidate() {
+        currentState.updateData()
+    }
+
+    fun add(sample: T, position: Int = -1, predicate: (T) -> Boolean = { false }): Int {
         val currentIndex = currentData.indexOfFirst(predicate)
-        if (currentIndex < 0) {
-            return
+        if (currentIndex >= 0) return -1
+
+        val index = when {
+            position < 0 || currentData.lastIndex < 0 -> 0
+            position > currentData.lastIndex -> currentData.lastIndex
+            else -> position
         }
+        currentData.add(index, sample)
+        currentState.updateData()
 
-        currentData[currentIndex] = sample
-
-        viewController.showData(true, currentData)
+        return index
     }
 
-    fun remove(predicate: (T) -> Boolean) {
-        val current = currentData.firstOrNull(predicate) ?: return
+    fun removeFirst(predicate: (T) -> Boolean): Int {
+        val current = currentData.firstOrNull(predicate) ?: return -1
+        val currentIndex = currentData.indexOf(current)
 
         currentData.remove(current)
-        if (currentData.isEmpty()) {
-            currentState = EMPTY_DATA()
-        } else {
-            viewController.showData(true, currentData)
-        }
+        currentState.updateData()
+
+        return currentIndex
+    }
+
+    fun removeAll(predicate: (T) -> Boolean) {
+        currentData.removeAll(currentData.filter(predicate))
+        currentState.updateData()
     }
 
     companion object {
-        internal const val DEFAULT_LIMIT = 20
+        internal const val DEFAULT_LIMIT = 10
         private const val SINGLE_PAGE_LIMIT = 0
     }
 }
