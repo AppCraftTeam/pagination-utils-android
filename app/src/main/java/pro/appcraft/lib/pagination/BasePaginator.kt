@@ -25,9 +25,9 @@ abstract class BasePaginator<T : Any>(
 
     }
 
-    fun refresh() {
+    fun refresh(forceRefresh: Boolean = false) {
         try {
-            currentState.refresh()
+            currentState.refresh(forceRefresh)
         } catch (e: Exception) {
             logger.error(e.message, e)
         }
