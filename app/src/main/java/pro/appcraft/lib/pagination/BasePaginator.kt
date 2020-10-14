@@ -13,7 +13,7 @@ abstract class BasePaginator<T : Any>(
 ) {
     val currentData: MutableList<T> = ArrayList()
 
-    internal var currentState: State<T> = IDLE()
+    internal var currentState: State<T> = Idle()
     private var disposable: Disposable? = null
 
     fun restart() {
@@ -64,16 +64,13 @@ abstract class BasePaginator<T : Any>(
 
     interface State<T> {
         @Throws(Exception::class)
-        fun restart() {
-        }
+        fun restart() {}
 
         @Throws(Exception::class)
-        fun refresh() {
-        }
+        fun refresh(forceRefresh: Boolean = false) {}
 
         @Throws(Exception::class)
-        fun loadNext() {
-        }
+        fun loadNext() {}
 
         fun release() {}
         fun newData(data: List<T>) {}
@@ -81,7 +78,7 @@ abstract class BasePaginator<T : Any>(
         fun updateData() {}
     }
 
-    private inner class IDLE internal constructor() : State<T> {
+    private inner class Idle : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -94,22 +91,22 @@ abstract class BasePaginator<T : Any>(
         @Throws(Exception::class)
         override fun restart() {
             currentData.clear()
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = EMPTY_PROGRESS()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = EmptyProgress()
             load(null)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
     }
 
-    private inner class EMPTY_PROGRESS internal constructor() : State<T> {
+    private inner class EmptyProgress : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -126,35 +123,35 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun newData(data: List<T>) {
-            if (data.isEmpty()) {
+            currentState = if (data.isEmpty()) {
                 currentData.clear()
-                currentState = EMPTY_DATA()
+                EmptyData()
             } else {
                 currentData.clear()
                 currentData.addAll(data)
-                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT)
-                    ALL_DATA()
+                if (data.size < limit || limit == SINGLE_PAGE_LIMIT)
+                    AllData()
                 else
                     DATA()
             }
         }
 
         override fun fail(error: Throwable) {
-            currentState = EMPTY_ERROR(error)
+            currentState = EmptyError(error)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
             if (currentData.isNotEmpty()) {
-                currentState = PAGE_PROGRESS()
+                currentState = PageProgress()
             }
         }
     }
 
-    private inner class EMPTY_ERROR internal constructor(error: Throwable) : State<T> {
+    private inner class EmptyError(error: Throwable) : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -167,18 +164,18 @@ abstract class BasePaginator<T : Any>(
 
         @Throws(Exception::class)
         override fun restart() {
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = EMPTY_PROGRESS()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = EmptyProgress()
             load(null)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
@@ -188,7 +185,7 @@ abstract class BasePaginator<T : Any>(
         }
     }
 
-    internal inner class EMPTY_DATA : State<T> {
+    internal inner class EmptyData : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -201,18 +198,18 @@ abstract class BasePaginator<T : Any>(
 
         @Throws(Exception::class)
         override fun restart() {
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = EMPTY_PROGRESS()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = EmptyProgress()
             load(null)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
@@ -222,7 +219,7 @@ abstract class BasePaginator<T : Any>(
         }
     }
 
-    private inner class DATA internal constructor() : State<T> {
+    private inner class DATA : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -236,35 +233,35 @@ abstract class BasePaginator<T : Any>(
         @Throws(Exception::class)
         override fun restart() {
             currentData.clear()
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = REFRESH()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = Refresh()
             load(null)
         }
 
         @Throws(Exception::class)
         override fun loadNext() {
-            currentState = PAGE_PROGRESS()
+            currentState = PageProgress()
             load(currentData)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
             if (currentData.isEmpty())
-                currentState = EMPTY_DATA()
+                currentState = EmptyData()
             else
                 viewController.showData(true, currentData)
         }
     }
 
-    private inner class REFRESH internal constructor() : State<T> {
+    private inner class Refresh : State<T> {
         init {
             viewController.showPageProgress(false)
             viewController.showEmptyError(false, null)
@@ -278,21 +275,26 @@ abstract class BasePaginator<T : Any>(
         @Throws(Exception::class)
         override fun restart() {
             currentData.clear()
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
+        @Throws(Exception::class)
+        override fun refresh(forceRefresh: Boolean) {
+            if (forceRefresh) {
+                currentState = Refresh()
+                load(null)
+            }
+        }
+
         override fun newData(data: List<T>) {
-            if (data.isEmpty()) {
+            currentState = if (data.isEmpty()) {
                 currentData.clear()
-                currentState = EMPTY_DATA()
+                EmptyData()
             } else {
                 currentData.clear()
                 currentData.addAll(data)
-                currentState = if (data.size < limit || limit == SINGLE_PAGE_LIMIT)
-                    ALL_DATA()
-                else
-                    DATA()
+                if (data.size < limit || limit == SINGLE_PAGE_LIMIT) AllData() else DATA()
             }
         }
 
@@ -302,18 +304,19 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
-            if (currentData.isEmpty())
-                currentState = EMPTY_PROGRESS()
-            else
+            if (currentData.isEmpty()) {
+                currentState = EmptyProgress()
+            } else {
                 viewController.showData(true, currentData)
+            }
         }
     }
 
-    private inner class PAGE_PROGRESS internal constructor() : State<T> {
+    private inner class PageProgress : State<T> {
         init {
             viewController.showEmptyError(false, null)
             viewController.showEmptyProgress(false)
@@ -327,42 +330,42 @@ abstract class BasePaginator<T : Any>(
         @Throws(Exception::class)
         override fun restart() {
             currentData.clear()
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         override fun newData(data: List<T>) {
             currentData.addAll(data)
             currentState = if (data.isEmpty() || data.size < limit || limit == SINGLE_PAGE_LIMIT)
-                ALL_DATA()
+                AllData()
             else
                 DATA()
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = REFRESH()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = Refresh()
             load(null)
         }
 
         override fun fail(error: Throwable) {
-            currentState = if (currentData.isEmpty()) EMPTY_DATA() else DATA()
+            currentState = if (currentData.isEmpty()) EmptyData() else DATA()
             viewController.showErrorMessage(error)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
             if (currentData.isEmpty())
-                currentState = EMPTY_PROGRESS()
+                currentState = EmptyProgress()
             else
                 viewController.showData(true, currentData)
         }
     }
 
-    private inner class ALL_DATA internal constructor() : State<T> {
+    private inner class AllData : State<T> {
         init {
             viewController.showRefreshProgress(false)
             viewController.showPageProgress(false)
@@ -376,29 +379,29 @@ abstract class BasePaginator<T : Any>(
         @Throws(Exception::class)
         override fun restart() {
             currentData.clear()
-            currentState = EMPTY_PROGRESS()
+            currentState = EmptyProgress()
             load(null)
         }
 
         @Throws(Exception::class)
-        override fun refresh() {
-            currentState = REFRESH()
+        override fun refresh(forceRefresh: Boolean) {
+            currentState = Refresh()
             load(null)
         }
 
         override fun release() {
-            currentState = RELEASED()
+            currentState = Released()
         }
 
         override fun updateData() {
             if (currentData.isEmpty())
-                currentState = EMPTY_DATA()
+                currentState = EmptyData()
             else
                 viewController.showData(true, currentData)
         }
     }
 
-    private inner class RELEASED internal constructor() : State<T> {
+    private inner class Released : State<T> {
         init {
             currentData.clear()
             if (disposable != null && !disposable!!.isDisposed)
@@ -421,6 +424,7 @@ abstract class BasePaginator<T : Any>(
         currentState.updateData()
     }
 
+    @Suppress("unused")
     fun add(sample: T, position: Int = -1, predicate: (T) -> Boolean = { false }): Int {
         val currentIndex = currentData.indexOfFirst(predicate)
         if (currentIndex >= 0) return -1
@@ -436,6 +440,7 @@ abstract class BasePaginator<T : Any>(
         return index
     }
 
+    @Suppress("unused")
     fun removeFirst(predicate: (T) -> Boolean): Int {
         val current = currentData.firstOrNull(predicate) ?: return -1
         val currentIndex = currentData.indexOf(current)
@@ -446,6 +451,7 @@ abstract class BasePaginator<T : Any>(
         return currentIndex
     }
 
+    @Suppress("unused")
     fun removeAll(predicate: (T) -> Boolean) {
         currentData.removeAll(currentData.filter(predicate))
         currentState.updateData()
