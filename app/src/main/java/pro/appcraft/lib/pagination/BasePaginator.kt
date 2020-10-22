@@ -1,20 +1,23 @@
 package pro.appcraft.lib.pagination
 
-import io.reactivex.Single
-import io.reactivex.disposables.Disposable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import java.util.*
+
+internal const val DEFAULT_LIMIT = 10
+private const val SINGLE_PAGE_LIMIT = 0
 
 private val logger = KotlinLogging.logger {}
 
 abstract class BasePaginator<T : Any>(
+    private val coroutineScope: CoroutineScope,
     internal val viewController: ViewController<T>,
     var limit: Int = DEFAULT_LIMIT
 ) {
     val currentData: MutableList<T> = ArrayList()
-
     internal var currentState: State<T> = Idle()
-    private var disposable: Disposable? = null
+    private var loadingJob: Job? = null
 
     fun restart() {
         try {
@@ -22,7 +25,6 @@ abstract class BasePaginator<T : Any>(
         } catch (e: Exception) {
             logger.error(e.message, e)
         }
-
     }
 
     fun refresh(forceRefresh: Boolean = false) {
@@ -31,7 +33,6 @@ abstract class BasePaginator<T : Any>(
         } catch (e: Exception) {
             logger.error(e.message, e)
         }
-
     }
 
     fun loadNext() {
@@ -40,7 +41,6 @@ abstract class BasePaginator<T : Any>(
         } catch (e: Exception) {
             logger.error(e.message, e)
         }
-
     }
 
     fun release() {
@@ -49,7 +49,6 @@ abstract class BasePaginator<T : Any>(
         } catch (e: Exception) {
             logger.error(e.message, e)
         }
-
     }
 
     interface ViewController<T> {
@@ -73,8 +72,11 @@ abstract class BasePaginator<T : Any>(
         fun loadNext() {}
 
         fun release() {}
+
         fun newData(data: List<T>) {}
+
         fun fail(error: Throwable) {}
+
         fun updateData() {}
     }
 
@@ -254,10 +256,11 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun updateData() {
-            if (currentData.isEmpty())
+            if (currentData.isEmpty()) {
                 currentState = EmptyData()
-            else
+            } else {
                 viewController.showData(true, currentData)
+            }
         }
     }
 
@@ -336,10 +339,11 @@ abstract class BasePaginator<T : Any>(
 
         override fun newData(data: List<T>) {
             currentData.addAll(data)
-            currentState = if (data.isEmpty() || data.size < limit || limit == SINGLE_PAGE_LIMIT)
+            currentState = if (data.isEmpty() || data.size < limit || limit == SINGLE_PAGE_LIMIT) {
                 AllData()
-            else
+            } else {
                 DATA()
+            }
         }
 
         @Throws(Exception::class)
@@ -358,10 +362,11 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun updateData() {
-            if (currentData.isEmpty())
+            if (currentData.isEmpty()) {
                 currentState = EmptyProgress()
-            else
+            } else {
                 viewController.showData(true, currentData)
+            }
         }
     }
 
@@ -394,47 +399,50 @@ abstract class BasePaginator<T : Any>(
         }
 
         override fun updateData() {
-            if (currentData.isEmpty())
+            if (currentData.isEmpty()) {
                 currentState = EmptyData()
-            else
+            } else {
                 viewController.showData(true, currentData)
+            }
         }
     }
 
     private inner class Released : State<T> {
         init {
             currentData.clear()
-            if (disposable != null && !disposable!!.isDisposed)
-                disposable!!.dispose()
         }
     }
 
     @Throws(Exception::class)
     private fun load(currentData: List<T>?) {
-        disposable?.dispose()
-
-        disposable = loadRequest(currentData, limit)
-            .subscribe({ result -> currentState.newData(result) }, { error -> currentState.fail(error) })
+        loadingJob?.cancel()
+        loadingJob = coroutineScope.launch {
+            try {
+                currentState.newData(loadRequest(currentData, limit))
+            } catch (e: Exception) {
+                currentState.fail(e)
+            }
+        }
     }
 
     @Throws(Exception::class)
-    protected abstract fun loadRequest(currentData: List<T>?, limit: Int): Single<List<T>>
+    protected abstract suspend fun loadRequest(currentData: List<T>?, limit: Int): List<T>
 
     fun invalidate() {
         currentState.updateData()
     }
 
     @Suppress("unused")
-    fun add(sample: T, position: Int = -1, predicate: (T) -> Boolean = { false }): Int {
+    fun add(item: T, position: Int = -1, predicate: (T) -> Boolean = { false }): Int {
         val currentIndex = currentData.indexOfFirst(predicate)
         if (currentIndex >= 0) return -1
 
         val index = when {
             position < 0 || currentData.lastIndex < 0 -> 0
-            position > currentData.lastIndex -> currentData.lastIndex
+            position > currentData.lastIndex -> currentData.lastIndex + 1
             else -> position
         }
-        currentData.add(index, sample)
+        currentData.add(index, item)
         currentState.updateData()
 
         return index
@@ -442,10 +450,10 @@ abstract class BasePaginator<T : Any>(
 
     @Suppress("unused")
     fun removeFirst(predicate: (T) -> Boolean): Int {
-        val current = currentData.firstOrNull(predicate) ?: return -1
-        val currentIndex = currentData.indexOf(current)
+        val item = currentData.firstOrNull(predicate) ?: return -1
+        val currentIndex = currentData.indexOf(item)
 
-        currentData.remove(current)
+        currentData.remove(item)
         currentState.updateData()
 
         return currentIndex
@@ -455,10 +463,5 @@ abstract class BasePaginator<T : Any>(
     fun removeAll(predicate: (T) -> Boolean) {
         currentData.removeAll(currentData.filter(predicate))
         currentState.updateData()
-    }
-
-    companion object {
-        internal const val DEFAULT_LIMIT = 10
-        private const val SINGLE_PAGE_LIMIT = 0
     }
 }
