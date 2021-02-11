@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import kotlin.coroutines.cancellation.CancellationException
 
 internal const val DEFAULT_LIMIT = 10
 private const val SINGLE_PAGE_LIMIT = 0
@@ -419,6 +420,8 @@ abstract class BasePaginator<T : Any>(
         loadingJob = coroutineScope.launch {
             try {
                 currentState.newData(loadRequest(currentData, limit))
+            } catch (ignored: CancellationException) {
+                /* empty */
             } catch (e: Exception) {
                 currentState.fail(e)
             }
